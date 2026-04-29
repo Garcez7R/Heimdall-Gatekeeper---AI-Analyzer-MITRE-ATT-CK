@@ -1,60 +1,128 @@
-# 🛡️ Heimdall AI – Blueprint v3
+# 🛡️ Heimdall AI
 
-O **Heimdall AI** é uma ferramenta de análise de logs com foco em segurança, detecção inteligente de eventos e mapeamento MITRE ATT&CK.
+O Heimdall AI é um projeto que estou desenvolvendo com o objetivo de transformar logs de segurança em algo realmente útil e compreensível.
 
-## 📌 Visão Geral
+A ideia não é criar mais um SIEM complexo, mas sim uma ferramenta leve que consiga analisar eventos, classificar riscos e explicar o que está acontecendo de forma clara — tanto para quem está começando quanto para quem já trabalha com segurança.
 
-- **Detecção de eventos de segurança**: Identifica comportamentos anômalos em logs.
-- **Classificação inteligente**: Categoriza eventos por nível de criticidade.
-- **Mapeamento MITRE ATT&CK**: Associa eventos a técnicas conhecidas de ataque.
-- **Explicação em linguagem humana**: Fornece clareza sobre o que ocorreu.
-- **Arquitetura portátil**: Pronto para Docker e multicloud.
+---
 
-## 🧱 Estrutura do Projeto
+## 🎯 Objetivo
+
+Quero construir uma ferramenta que:
+
+* Analisa logs de segurança (começando por SSH)
+* Detecta comportamentos suspeitos
+* Classifica eventos (normal, suspeito, crítico)
+* Mapeia para o MITRE ATT&CK
+* Explica o que aconteceu em linguagem simples
+
+Mais do que detectar, o foco aqui é **entender e explicar**.
+
+---
+
+## 🧠 Filosofia do projeto
+
+Estou seguindo alguns princípios bem claros:
+
+* Simplicidade > complexidade
+* Clareza > excesso de detalhe técnico
+* Evolução gradual > tentar fazer tudo de uma vez
+* Funcionar bem > parecer sofisticado
+
+---
+
+## 🧱 Estrutura atual
 
 ```text
 heimdall-ai/
-├── core/
-│   └── models.py           # Contratos de dados centrais
-├── parsers/
-│   └── ssh_parser.py       # Parser para logs de SSH
-├── detectors/
-│   └── failed_login_detector.py # Lógica de detecção de falhas
-├── cli/
-│   └── main.py             # Interface de linha de comando
-├── requirements.txt        # Dependências Python
-├── Dockerfile              # Configuração da imagem Docker
-├── docker-compose.yml      # Orquestração local
-├── sample.log              # Arquivo de log para testes
-└── README.md               # Documentação
+├── core/                  # Modelos e contratos centrais
+├── parsers/               # Responsável por interpretar logs
+├── detectors/             # Lógica de detecção de eventos
+├── cli/                   # Interface de linha de comando
+├── docs/                  # Documentação do projeto
+├── Dockerfile
+├── docker-compose.yml
+├── requirements.txt
+└── README.md
 ```
 
-## ▶️ Como Rodar
+---
 
-### Localmente
+## 🔍 Como o sistema funciona
 
-Certifique-se de ter o Python 3.11+ instalado.
+O fluxo é simples por enquanto:
 
-1. Instale as dependências:
-   ```bash
-   pip install -r requirements.txt
-   ```
+```text
+log → parser → evento → detector → resultado
+```
 
-2. Execute o analisador:
-   ```bash
-   python -m cli.main sample.log
-   ```
+* O parser extrai informações do log
+* O detector analisa o comportamento
+* O resultado traz classificação + explicação
 
-### Via Docker
+---
 
-1. Suba o container:
-   ```bash
-   docker-compose up --build
-   ```
+## ▶️ Como rodar
 
-## 🚀 Próximos Passos
+### 🔹 Local
 
-- Adicionar detectores de Brute Force separados.
-- Incluir MITRE como objeto estruturado.
-- Criar uma API com FastAPI.
-- Integrar com Cloudflare Workers.
+```bash
+pip install -r requirements.txt
+python -m cli.main sample.log
+```
+
+---
+
+### 🔹 Docker
+
+```bash
+docker-compose up --build
+```
+
+---
+
+## 📌 Status atual
+
+🚧 Em desenvolvimento (MVP)
+
+O projeto ainda está na fase inicial. Estou focando em:
+
+* Estrutura sólida
+* Código simples e legível
+* Evolução incremental (sem pular etapas)
+
+---
+
+## 🪜 Próximos passos
+
+* Melhorar o parser de SSH
+* Implementar detecção de brute force
+* Estruturar melhor o mapeamento MITRE
+* Criar uma API simples
+* Adicionar camada de explicação mais rica
+
+---
+
+## ☁️ Visão futura
+
+A ideia é evoluir isso para:
+
+* Rodar em container (Docker)
+* Ter integração com cloud (AWS, GCP)
+* Usar Cloudflare como camada de edge para demonstração
+* Possivelmente evoluir para uma versão com interface web
+
+---
+
+## 💡 Por que estou fazendo isso
+
+Esse projeto também faz parte da minha transição e consolidação em:
+
+* Segurança (Blue Team)
+* Cloud
+* Arquitetura de sistemas
+* Aplicação prática de IA
+
+Quero construir algo que seja útil de verdade — não só um projeto de portfólio, mas uma ferramenta que eu mesmo usaria.
+
+---
