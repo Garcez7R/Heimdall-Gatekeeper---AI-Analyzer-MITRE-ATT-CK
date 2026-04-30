@@ -3,6 +3,11 @@ from detectors.failed_login_detector import FailedLoginDetector
 from parsers.ssh_parser import parse_ssh_log
 from collections import defaultdict
 from datetime import datetime
+import json
+import os
+
+# Caminho para "banco de dados" simples de persistência
+HISTORY_FILE = "analysis_history.json"
 
 def analyze_lines(lines: list[str]) -> list[tuple[Event, AnalysisResult]]:
     detector = FailedLoginDetector()
@@ -21,31 +26,72 @@ def analyze_lines(lines: list[str]) -> list[tuple[Event, AnalysisResult]]:
 def analyze_text(log_text: str) -> list[tuple[Event, AnalysisResult]]:
     return analyze_lines(log_text.splitlines())
 
-def calculate_risk_score(data: dict) -> int:
+def get_context_enrichment(ip: str) -> dict:
     """
-    Calcula um score de 0 a 100 baseado no comportamento.
+    Simula enriquecimento de contexto (GeoIP/ASN/Reputação).
+    Em um cenário real, aqui seria feita uma chamada de API ou busca em DB local.
+    """
+    # Simulação baseada em faixas de IP para demonstração
+    if ip.startswith("192.168"):
+        return {"country": "Local Network", "city": "Internal", "asn": "N/A", "reputation": "Trusted"}
+    elif ip.startswith("203."):
+        return {"country": "Netherlands", "city": "Amsterdam", "asn": "AS16276 (OVH)", "reputation": "Suspicious"}
+    else:
+        return {"country": "Unknown", "city": "Unknown", "asn": "Unknown", "reputation": "Neutral"}
+
+def calculate_deterministic_risk_score(data: dict) -> int:
+    """
+    Cálculo de score determinístico e explicável.
     """
     score = 0
     
-    # Pontuação por falhas (max 40)
-    score += min(data["failed_count"] * 8, 40)
+    # 1. Volume de falhas (max 40)
+    if data["failed_count"] >= 10: score += 40
+    elif data["failed_count"] >= 5: score += 30
+    elif data["failed_count"] >= 1: score += 10
     
-    # Bônus por densidade temporal (janela curta = maior risco)
-    if data["failed_count"] >= 2 and data["duration_seconds"] > 0:
-        events_per_second = data["failed_count"] / data["duration_seconds"]
-        if events_per_second > 0.5: # Mais de 1 evento a cada 2 seg
-            score += 20
-    
-    # Bônus por comprometimento (sucesso após falhas)
+    # 2. Comprometimento (Ouro da detecção)
     if data["is_compromised"]:
         score += 40
         
+    # 3. Usuários Privilegiados
+    if "root" in data["user"] or "admin" in data["user"]:
+        score += 10
+        
+    # 4. Intensidade Temporal (Burst)
+    if data["failed_count"] >= 3 and data["duration_seconds"] < 10:
+        score += 10
+        
     return min(score, 100)
 
+def save_to_history(new_findings: list[dict]):
+    """
+    Persiste os achados em um arquivo JSON para histórico.
+    """
+    history = []
+    if os.path.exists(HISTORY_FILE):
+        try:
+            with open(HISTORY_FILE, "r") as f:
+                history = json.load(f)
+        except:
+            history = []
+            
+    # Adiciona timestamp da análise
+    analysis_entry = {
+        "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        "summary": {
+            "total_ips": len(new_findings),
+            "compromised": sum(1 for f in new_findings if f["classification"] == "comprometido"),
+            "critical": sum(1 for f in new_findings if f["classification"] == "crítico")
+        },
+        "details": new_findings[:5] # Salva apenas os top 5 para não inflar o arquivo
+    }
+    
+    history.insert(0, analysis_entry)
+    with open(HISTORY_FILE, "w") as f:
+        json.dump(history[:20], f, indent=2) # Mantém apenas as últimas 20 análises
+
 def get_grouped_findings(findings: list[tuple[Event, AnalysisResult]]) -> list[dict]:
-    """
-    Agrupa achados por IP com análise temporal, score de risco e timeline.
-    """
     grouped = defaultdict(lambda: {
         "ip": "",
         "user": set(),
@@ -59,7 +105,8 @@ def get_grouped_findings(findings: list[tuple[Event, AnalysisResult]]) -> list[d
         "is_compromised": False,
         "first_seen": None,
         "last_seen": None,
-        "timeline": [] # Lista de {time, status, user}
+        "timeline": [],
+        "context": {}
     })
 
     for event, result in findings:
@@ -68,14 +115,12 @@ def get_grouped_findings(findings: list[tuple[Event, AnalysisResult]]) -> list[d
         ip_data["user"].add(event.user or "desconhecido")
         ip_data["count"] += 1
         
-        # Timeline
         ip_data["timeline"].append({
             "time": event.timestamp.strftime("%H:%M:%S"),
             "status": event.status,
             "user": event.user or "desconhecido"
         })
         
-        # Janela Temporal
         if ip_data["first_seen"] is None or event.timestamp < ip_data["first_seen"]:
             ip_data["first_seen"] = event.timestamp
         if ip_data["last_seen"] is None or event.timestamp > ip_data["last_seen"]:
@@ -85,8 +130,6 @@ def get_grouped_findings(findings: list[tuple[Event, AnalysisResult]]) -> list[d
             ip_data["failed_count"] += 1
             if result:
                 ip_data["mitre_techniques"].update(result.mitre_techniques)
-                if result.classification == "crítico":
-                    ip_data["is_critical"] = True
         
         elif event.status == "success":
             ip_data["success_count"] += 1
@@ -100,14 +143,16 @@ def get_grouped_findings(findings: list[tuple[Event, AnalysisResult]]) -> list[d
         if data["failed_count"] == 0 and not data["is_compromised"]:
             continue
             
-        # Calcula duração da janela
         duration = (data["last_seen"] - data["first_seen"]).total_seconds()
         data["duration_seconds"] = duration
         
-        # Risk Score
-        data["risk_score"] = calculate_risk_score(data)
+        # Enriquecimento de Contexto
+        data["context"] = get_context_enrichment(ip)
         
-        # Classificação Final baseada no Score
+        # Risk Score Determinístico
+        data["risk_score"] = calculate_deterministic_risk_score(data)
+        
+        # Classificação Rígida
         if data["is_compromised"]:
             data["classification"] = "comprometido"
         elif data["risk_score"] >= 60:
@@ -115,14 +160,23 @@ def get_grouped_findings(findings: list[tuple[Event, AnalysisResult]]) -> list[d
         else:
             data["classification"] = "suspeito"
             
-        # Formatação de campos para UI
         data["user"] = ", ".join(data["user"])
         data["mitre_techniques"] = sorted(list(data["mitre_techniques"]))
-        data["timeline"] = data["timeline"][-10:] # Mantém apenas os últimos 10 eventos
+        data["timeline"] = data["timeline"][-10:]
         
         result_list.append(data)
     
-    # Ordenação por Risk Score (Maior primeiro)
     result_list.sort(key=lambda x: x["risk_score"], reverse=True)
+    
+    # Persiste no histórico se houver resultados
+    if result_list:
+        save_to_history(result_list)
         
     return result_list
+
+def get_analysis_history():
+    """Retorna o histórico de análises salvas."""
+    if os.path.exists(HISTORY_FILE):
+        with open(HISTORY_FILE, "r") as f:
+            return json.load(f)
+    return []
