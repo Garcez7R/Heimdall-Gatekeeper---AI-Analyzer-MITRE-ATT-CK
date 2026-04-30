@@ -11,240 +11,225 @@ from core.analyzer import analyze_text, get_grouped_findings
 from core.cache import cleanup_runtime_cache
 
 DEFAULT_SAMPLE = """Jul 10 10:15:30 server sshd[1234]: Failed password for invalid user admin from 192.168.1.10 port 22 ssh2
+Jul 10 10:15:31 server sshd[1234]: Failed password for invalid user admin from 192.168.1.10 port 22 ssh2
 Jul 10 10:15:32 server sshd[1234]: Failed password for invalid user admin from 192.168.1.10 port 22 ssh2
+Jul 10 10:15:33 server sshd[1234]: Failed password for invalid user admin from 192.168.1.10 port 22 ssh2
 Jul 10 10:15:34 server sshd[1234]: Failed password for invalid user admin from 192.168.1.10 port 22 ssh2
-Jul 10 10:15:36 server sshd[1234]: Failed password for invalid user admin from 192.168.1.10 port 22 ssh2
-Jul 10 10:15:38 server sshd[1234]: Failed password for invalid user admin from 192.168.1.10 port 22 ssh2
 Jul 11 09:00:01 server sshd[5678]: Failed password for root from 203.0.113.5 port 22 ssh2
-Jul 11 09:00:05 server sshd[5678]: Failed password for root from 203.0.113.5 port 22 ssh2
-Jul 11 09:00:10 server sshd[5678]: Failed password for root from 203.0.113.5 port 22 ssh2
-Jul 11 09:00:15 server sshd[5678]: Accepted password for root from 203.0.113.5 port 22 ssh2"""
+Jul 11 09:00:02 server sshd[5678]: Failed password for root from 203.0.113.5 port 22 ssh2
+Jul 11 09:00:03 server sshd[5678]: Failed password for root from 203.0.113.5 port 22 ssh2
+Jul 11 09:00:05 server sshd[5678]: Accepted password for root from 203.0.113.5 port 22 ssh2"""
 
 
 def render_page(log_text: str = DEFAULT_SAMPLE, grouped_findings: list[dict] | None = None) -> str:
     grouped_findings = grouped_findings or []
     
-    # Contadores para o resumo global
+    # Resumo para os widgets
     compromised_count = sum(1 for f in grouped_findings if f["classification"] == "comprometido")
     critical_count = sum(1 for f in grouped_findings if f["classification"] == "crítico")
-    suspicious_count = sum(1 for f in grouped_findings if f["classification"] == "suspeito")
+    avg_risk = sum(f["risk_score"] for f in grouped_findings) / len(grouped_findings) if grouped_findings else 0
     
     cards = "\n".join(render_finding_card(item) for item in grouped_findings)
-    empty_state = "" if grouped_findings else "<p class='empty'>Cole logs SSH/auth.log e clique em analisar.</p>"
+    empty_state = "" if grouped_findings else "<p class='empty'>Insira logs para iniciar o Threat Hunting.</p>"
 
-    # Insight de topo (Prioridade para Comprometimento)
+    # Insight de topo
     insight_html = ""
-    target_insight = next((f for f in grouped_findings if f["classification"] == "comprometido"), None)
-    if not target_insight:
-        target_insight = next((f for f in grouped_findings if f["classification"] == "crítico"), None)
-
-    if target_insight:
-        is_comp = target_insight["classification"] == "comprometido"
-        icon = "🚨" if is_comp else "⚠️"
-        title = "Possível comprometimento de conta detectado" if is_comp else "Possível ataque de força bruta detectado"
-        mitre = ", ".join(target_insight["mitre_techniques"]) if target_insight["mitre_techniques"] else "N/A"
+    top_threat = grouped_findings[0] if grouped_findings else None
+    if top_threat and top_threat["risk_score"] >= 70:
+        is_comp = top_threat["classification"] == "comprometido"
+        icon = "🚨" if is_comp else "🔥"
+        title = "CRITICAL THREAT: Account Compromise" if is_comp else "HIGH RISK: Active Brute Force"
         
         insight_html = f"""
         <div class="insight-banner {"banner--compromised" if is_comp else ""}">
             <div class="insight-icon">{icon}</div>
             <div class="insight-content">
                 <strong>{title}</strong>
-                <p>IP: {escape(target_insight["ip"])} | MITRE: {escape(mitre)}</p>
+                <p>IP {escape(top_threat["ip"])} apresenta padrão anômalo com Risk Score {top_threat["risk_score"]}/100.</p>
             </div>
         </div>
         """
-
-    # Resumo Global Detalhado
-    summary_list = []
-    if compromised_count: summary_list.append(f"<li>{compromised_count} possível(is) comprometimento(s)</li>")
-    if critical_count: summary_list.append(f"<li>{critical_count} ataque(s) de força bruta</li>")
-    if suspicious_count: summary_list.append(f"<li>{suspicious_count} atividade(s) suspeita(s) isolada(s)</li>")
-    
-    summary_html = f"<ul>{''.join(summary_list)}</ul>" if summary_list else "<p>Nenhuma ameaça detectada.</p>"
 
     return f"""<!doctype html>
 <html lang="pt-BR">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Heimdall AI Analyzer</title>
+  <title>Heimdall AI | Threat Intelligence</title>
   <style>
     :root {{
-      color-scheme: dark;
-      --bg: #07090d;
-      --panel: #10151f;
-      --panel-soft: #151c28;
-      --text: #edf2f7;
-      --muted: #9aa7b6;
-      --line: #263244;
+      --bg: #05070a;
+      --panel: #0d1117;
+      --panel-light: #161b22;
+      --text: #c9d1d9;
+      --text-dim: #8b949e;
+      --border: #30363d;
+      --cyan: #58a6ff;
       --green: #3fb950;
-      --cyan: #4fd7ff;
-      --amber: #ffb454;
-      --red: #ff5a5f;
-      --purple: #a371f7;
-      --red-glow: rgba(255, 90, 95, 0.15);
-      --purple-glow: rgba(163, 113, 247, 0.15);
+      --amber: #d29922;
+      --red: #f85149;
+      --purple: #bc8cff;
+      --red-glow: rgba(248, 81, 73, 0.1);
+      --purple-glow: rgba(188, 140, 255, 0.1);
     }}
     * {{ box-sizing: border-box; }}
     body {{
-      margin: 0;
-      min-height: 100vh;
-      background: radial-gradient(circle at top right, rgba(79, 215, 255, 0.12), transparent 32%), var(--bg);
-      color: var(--text);
-      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      margin: 0; background: var(--bg); color: var(--text);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
       line-height: 1.5;
     }}
-    main {{ width: min(1120px, calc(100% - 32px)); margin: 0 auto; padding: 32px 0 48px; }}
-    header {{ display: flex; justify-content: space-between; gap: 20px; align-items: end; margin-bottom: 24px; }}
-    h1, h2, p {{ margin: 0; }}
-    h1 {{ font-size: clamp(2rem, 5vw, 3.5rem); line-height: 0.95; letter-spacing: -0.02em; }}
-    h2 {{ font-size: 1.1rem; }}
-    .eyebrow, .metric span, button, label, .badge {{
-      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-      text-transform: uppercase;
-      letter-spacing: 0.08em;
-    }}
-    .eyebrow {{ color: var(--green); font-size: 0.78rem; margin-bottom: 10px; }}
-    .subtitle {{ max-width: 680px; color: var(--muted); margin-top: 14px; }}
+    main {{ max-width: 1200px; margin: 0 auto; padding: 40px 20px; }}
     
+    header {{ margin-bottom: 32px; border-bottom: 1px solid var(--border); padding-bottom: 20px; }}
+    h1 {{ font-size: 1.5rem; margin: 0; display: flex; align-items: center; gap: 10px; }}
+    .logo {{ color: var(--green); font-weight: 800; letter-spacing: -0.5px; }}
+    .version {{ font-size: 0.7rem; background: var(--border); padding: 2px 6px; border-radius: 4px; color: var(--text-dim); }}
+
     .insight-banner {{
-        background: var(--red-glow);
-        border: 1px solid rgba(255, 90, 95, 0.3);
-        border-radius: 12px;
-        padding: 16px;
-        margin-bottom: 24px;
-        display: flex;
-        align-items: center;
-        gap: 16px;
+        background: var(--red-glow); border: 1px solid var(--red); border-radius: 8px;
+        padding: 16px; margin-bottom: 24px; display: flex; align-items: center; gap: 16px;
         animation: pulse 2s infinite;
     }}
-    .banner--compromised {{
-        background: var(--purple-glow);
-        border-color: rgba(163, 113, 247, 0.4);
-    }}
+    .banner--compromised {{ background: var(--purple-glow); border-color: var(--purple); }}
     @keyframes pulse {{
-        0% {{ box-shadow: 0 0 0 0 rgba(255, 90, 95, 0.4); }}
-        70% {{ box-shadow: 0 0 0 10px rgba(255, 90, 95, 0); }}
-        100% {{ box-shadow: 0 0 0 0 rgba(255, 90, 95, 0); }}
+        0% {{ box-shadow: 0 0 0 0 rgba(248, 81, 73, 0.2); }}
+        70% {{ box-shadow: 0 0 0 6px rgba(248, 81, 73, 0); }}
+        100% {{ box-shadow: 0 0 0 0 rgba(248, 81, 73, 0); }}
     }}
-    .insight-icon {{ font-size: 1.5rem; }}
-    .insight-content strong {{ color: var(--red); display: block; font-size: 1.1rem; }}
-    .banner--compromised .insight-content strong {{ color: var(--purple); }}
-    .insight-content p {{ color: var(--muted); font-size: 0.9rem; }}
+    .insight-icon {{ font-size: 1.4rem; }}
+    .insight-content strong {{ color: #fff; display: block; }}
+    .insight-content p {{ color: var(--text-dim); font-size: 0.85rem; margin: 2px 0 0; }}
 
-    .shell {{ display: grid; grid-template-columns: minmax(0, 1.05fr) minmax(320px, 0.95fr); gap: 18px; align-items: start; }}
-    .panel {{
-      border: 1px solid var(--line);
-      border-radius: 18px;
-      background: linear-gradient(180deg, rgba(255,255,255,0.035), rgba(255,255,255,0.012)), var(--panel);
-      box-shadow: 0 24px 60px rgba(0, 0, 0, 0.28);
-    }}
-    form {{ padding: 18px; }}
-    label {{ display: block; color: var(--muted); font-size: 0.72rem; margin-bottom: 10px; }}
+    .grid {{ display: grid; grid-template-columns: 1fr 380px; gap: 24px; }}
+    .panel {{ background: var(--panel); border: 1px solid var(--border); border-radius: 8px; overflow: hidden; }}
+    
+    .editor-container {{ padding: 16px; }}
     textarea {{
-      width: 100%;
-      min-height: 430px;
-      resize: vertical;
-      border: 1px solid var(--line);
-      border-radius: 12px;
-      padding: 14px;
-      background: #080c12;
-      color: var(--text);
-      font: 0.9rem/1.5 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-      outline: none;
+      width: 100%; height: 400px; background: #010409; color: #79c0ff;
+      border: 1px solid var(--border); border-radius: 6px; padding: 12px;
+      font-family: ui-monospace, SFMono-Regular, SF Mono, Menlo, Consolas, Liberation Mono, monospace;
+      font-size: 12px; outline: none; resize: none;
     }}
-    textarea:focus {{ border-color: rgba(79, 215, 255, 0.55); }}
-    .actions {{ display: flex; justify-content: flex-end; margin-top: 14px; }}
-    button {{
-      border: 1px solid rgba(79, 215, 255, 0.35);
-      border-radius: 999px;
-      padding: 0.8rem 1.5rem;
-      background: rgba(79, 215, 255, 0.12);
-      color: var(--text);
-      cursor: pointer;
-      transition: all 0.2s;
+    .btn-analyze {{
+      margin-top: 12px; width: 100%; padding: 10px; background: var(--green);
+      color: #fff; border: none; border-radius: 6px; font-weight: 600; cursor: pointer;
     }}
-    button:hover {{ background: rgba(79, 215, 255, 0.2); border-color: var(--cyan); }}
-    
-    .results {{ display: grid; gap: 14px; }}
-    .global-summary {{ padding: 20px; }}
-    .global-summary h3 {{ font-size: 0.8rem; color: var(--muted); text-transform: uppercase; margin-bottom: 12px; border-bottom: 1px solid var(--line); padding-bottom: 8px; }}
-    .global-summary ul {{ padding-left: 18px; margin: 0; font-size: 0.9rem; color: var(--text); }}
-    .global-summary li {{ margin-bottom: 4px; }}
+    .btn-analyze:hover {{ opacity: 0.9; }}
 
-    .finding {{ padding: 20px; display: grid; gap: 12px; position: relative; overflow: hidden; }}
-    .finding.compromised {{ border-left: 4px solid var(--purple); background: linear-gradient(90deg, var(--purple-glow), transparent); }}
-    .finding.critical {{ border-left: 4px solid var(--red); background: linear-gradient(90deg, var(--red-glow), transparent); }}
+    .stats-bar {{ display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-bottom: 20px; }}
+    .stat-card {{ background: var(--panel); border: 1px solid var(--border); padding: 12px; border-radius: 8px; text-align: center; }}
+    .stat-val {{ font-size: 1.2rem; font-weight: bold; display: block; }}
+    .stat-label {{ font-size: 0.65rem; color: var(--text-dim); text-transform: uppercase; }}
+
+    .finding {{ margin-bottom: 16px; padding: 16px; border-left: 4px solid var(--border); }}
+    .finding.comprometido {{ border-left-color: var(--purple); }}
+    .finding.crítico {{ border-left-color: var(--red); }}
+    .finding.suspeito {{ border-left-color: var(--amber); }}
     
-    .finding h2 {{ display: flex; justify-content: space-between; gap: 12px; align-items: center; }}
-    .badge {{ border-radius: 4px; padding: 0.2rem 0.5rem; font-size: 0.65rem; font-weight: bold; }}
-    .badge--comprometido {{ color: #fff; background: var(--purple); }}
-    .badge--crítico {{ color: #fff; background: var(--red); }}
-    .badge--suspeito {{ color: #000; background: var(--amber); }}
-    
-    .meta {{ display: flex; flex-wrap: wrap; gap: 8px; color: var(--muted); font-size: 0.85rem; }}
-    .meta span {{ border: 1px solid var(--line); border-radius: 6px; padding: 0.2rem 0.6rem; background: rgba(0,0,0,0.2); }}
-    .event-count {{ color: var(--cyan); font-weight: bold; }}
-    
-    .explanation {{ color: var(--text); font-weight: 500; }}
-    .reasoning {{ color: var(--muted); font-size: 0.9rem; border-top: 1px solid var(--line); padding-top: 10px; }}
-    .empty {{ padding: 24px; color: var(--muted); text-align: center; font-style: italic; }}
-    
-    @media (max-width: 860px) {{
-      header, .shell {{ grid-template-columns: 1fr; display: grid; }}
-    }}
+    .finding-header {{ display: flex; justify-content: space-between; align-items: start; margin-bottom: 12px; }}
+    .ip-addr {{ font-size: 1.1rem; font-weight: bold; color: #fff; }}
+    .risk-badge {{ font-size: 0.7rem; font-weight: 800; padding: 2px 8px; border-radius: 99px; }}
+    .risk--comprometido {{ background: var(--purple); color: #fff; }}
+    .risk--crítico {{ background: var(--red); color: #fff; }}
+    .risk--suspeito {{ background: var(--amber); color: #000; }}
+
+    .risk-meter {{ height: 4px; background: var(--border); border-radius: 2px; margin: 8px 0; overflow: hidden; }}
+    .risk-fill {{ height: 100%; transition: width 0.5s; }}
+
+    .meta-grid {{ display: grid; grid-template-columns: 1fr 1fr; gap: 8px; font-size: 0.75rem; color: var(--text-dim); }}
+    .meta-item b {{ color: var(--text); }}
+
+    .timeline {{ margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--border); }}
+    .timeline-title {{ font-size: 0.65rem; color: var(--text-dim); text-transform: uppercase; margin-bottom: 8px; display: block; }}
+    .timeline-item {{ font-family: monospace; font-size: 11px; display: flex; gap: 8px; margin-bottom: 2px; }}
+    .t-time {{ color: var(--text-dim); min-width: 55px; }}
+    .t-status {{ font-weight: bold; width: 50px; }}
+    .status--failed {{ color: var(--red); }}
+    .status--success {{ color: var(--green); }}
+
+    @media (max-width: 900px) {{ .grid {{ grid-template-columns: 1fr; }} }}
   </style>
 </head>
 <body>
   <main>
     <header>
-      <div>
-        <p class="eyebrow">Heimdall Gatekeeper</p>
-        <h1>Security Analyzer</h1>
-        <p class="subtitle">Análise comportamental de logs SSH com detecção de comprometimento e padrões MITRE ATT&CK.</p>
-      </div>
+      <h1><span class="logo">HEIMDALL</span> GATEKEEPER <span class="version">v4.0 PRO</span></h1>
     </header>
 
     {insight_html}
 
-    <section class="shell">
-      <form class="panel" method="post" action="/analyze">
-        <label for="logs">Logs SSH/auth.log</label>
-        <textarea id="logs" name="logs" spellcheck="false">{escape(log_text)}</textarea>
-        <div class="actions"><button type="submit">Executar Análise</button></div>
-      </form>
-      <aside class="results">
-        <div class="panel global-summary">
-          <h3>Resumo da Atividade</h3>
-          {summary_html}
+    <div class="grid">
+      <section>
+        <div class="panel editor-container">
+          <form method="post" action="/analyze">
+            <textarea name="logs" spellcheck="false">{escape(log_text)}</textarea>
+            <button type="submit" class="btn-analyze">RUN SECURITY ANALYSIS</button>
+          </form>
         </div>
-        {empty_state}
-        {cards}
+      </section>
+
+      <aside>
+        <div class="stats-bar">
+          <div class="stat-card"><span class="stat-val">{compromised_count}</span><span class="stat-label">Compromised</span></div>
+          <div class="stat-card"><span class="stat-val">{critical_count}</span><span class="stat-label">Critical</span></div>
+          <div class="stat-card"><span class="stat-val">{int(avg_risk)}</span><span class="stat-label">Avg Risk</span></div>
+        </div>
+        
+        <div class="results-list">
+          {empty_state}
+          {cards}
+        </div>
       </aside>
-    </section>
+    </div>
   </main>
 </body>
 </html>"""
 
 
 def render_finding_card(item: dict) -> str:
-    mitre = ", ".join(item["mitre_techniques"]) if item["mitre_techniques"] else "N/A"
     classification = item["classification"]
+    score = item["risk_score"]
     
-    status_class = ""
-    if classification == "comprometido": status_class = "compromised"
-    elif classification == "crítico": status_class = "critical"
+    # Timeline HTML
+    timeline_items = []
+    for entry in item["timeline"]:
+        status_class = f"status--{entry['status']}"
+        timeline_items.append(f"""
+            <div class="timeline-item">
+                <span class="t-time">[{entry['time']}]</span>
+                <span class="t-status {status_class}">{entry['status'].upper()}</span>
+                <span class="t-user">{escape(entry['user'])}</span>
+            </div>
+        """)
     
-    return f"""<article class="panel finding {status_class}">
-  <h2>{escape(item["ip"] or "IP desconhecido")} <span class="badge badge--{escape(classification)}">{escape(classification)}</span></h2>
-  <div class="meta">
-    <span class="event-count">Eventos: {item["count"]}</span>
-    <span>Usuários: {escape(item["user"])}</span>
-    <span>MITRE: {escape(mitre)}</span>
-  </div>
-  <p class="explanation">{escape(item["explanation"])}</p>
-  <p class="reasoning">{escape(item["reasoning"] or "Sem raciocínio adicional.")}</p>
-</article>"""
+    timeline_html = f"""
+        <div class="timeline">
+            <span class="timeline-title">Event Timeline (Last 10)</span>
+            {''.join(timeline_items)}
+        </div>
+    """
+
+    return f"""
+    <div class="panel finding {classification}">
+        <div class="finding-header">
+            <span class="ip-addr">{escape(item["ip"])}</span>
+            <span class="risk-badge risk--{classification}">{score}% RISK</span>
+        </div>
+        
+        <div class="risk-meter">
+            <div class="risk-fill risk--{classification}" style="width: {score}%"></div>
+        </div>
+
+        <div class="meta-grid">
+            <div class="meta-item">Users: <b>{escape(item["user"])}</b></div>
+            <div class="meta-item">Total Events: <b>{item["count"]}</b></div>
+            <div class="meta-item">Duration: <b>{int(item["duration_seconds"])}s</b></div>
+            <div class="meta-item">MITRE: <b>{", ".join(item["mitre_techniques"]) or "N/A"}</b></div>
+        </div>
+
+        {timeline_html}
+    </div>
+    """
 
 
 class HeimdallWebHandler(BaseHTTPRequestHandler):
