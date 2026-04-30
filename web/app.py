@@ -14,32 +14,53 @@ DEFAULT_SAMPLE = """Jul 10 10:15:30 server sshd[1234]: Failed password for inval
 Jul 10 10:15:32 server sshd[1234]: Failed password for invalid user admin from 192.168.1.10 port 22 ssh2
 Jul 10 10:15:34 server sshd[1234]: Failed password for invalid user admin from 192.168.1.10 port 22 ssh2
 Jul 10 10:15:36 server sshd[1234]: Failed password for invalid user admin from 192.168.1.10 port 22 ssh2
-Jul 10 10:15:38 server sshd[1234]: Failed password for invalid user admin from 192.168.1.10 port 22 ssh2"""
+Jul 10 10:15:38 server sshd[1234]: Failed password for invalid user admin from 192.168.1.10 port 22 ssh2
+Jul 11 09:00:01 server sshd[5678]: Failed password for root from 203.0.113.5 port 22 ssh2
+Jul 11 09:00:05 server sshd[5678]: Failed password for root from 203.0.113.5 port 22 ssh2
+Jul 11 09:00:10 server sshd[5678]: Failed password for root from 203.0.113.5 port 22 ssh2
+Jul 11 09:00:15 server sshd[5678]: Accepted password for root from 203.0.113.5 port 22 ssh2"""
 
 
 def render_page(log_text: str = DEFAULT_SAMPLE, grouped_findings: list[dict] | None = None) -> str:
     grouped_findings = grouped_findings or []
-    critical_findings = [f for f in grouped_findings if f["classification"] == "crítico"]
-    critical_count = len(critical_findings)
+    
+    # Contadores para o resumo global
+    compromised_count = sum(1 for f in grouped_findings if f["classification"] == "comprometido")
+    critical_count = sum(1 for f in grouped_findings if f["classification"] == "crítico")
     suspicious_count = sum(1 for f in grouped_findings if f["classification"] == "suspeito")
     
     cards = "\n".join(render_finding_card(item) for item in grouped_findings)
     empty_state = "" if grouped_findings else "<p class='empty'>Cole logs SSH/auth.log e clique em analisar.</p>"
 
-    # Insight de topo se houver críticos
+    # Insight de topo (Prioridade para Comprometimento)
     insight_html = ""
-    if critical_findings:
-        top_critical = critical_findings[0]
-        mitre = ", ".join(top_critical["mitre_techniques"]) if top_critical["mitre_techniques"] else "N/A"
+    target_insight = next((f for f in grouped_findings if f["classification"] == "comprometido"), None)
+    if not target_insight:
+        target_insight = next((f for f in grouped_findings if f["classification"] == "crítico"), None)
+
+    if target_insight:
+        is_comp = target_insight["classification"] == "comprometido"
+        icon = "🚨" if is_comp else "⚠️"
+        title = "Possível comprometimento de conta detectado" if is_comp else "Possível ataque de força bruta detectado"
+        mitre = ", ".join(target_insight["mitre_techniques"]) if target_insight["mitre_techniques"] else "N/A"
+        
         insight_html = f"""
-        <div class="insight-banner">
-            <div class="insight-icon">⚠️</div>
+        <div class="insight-banner {"banner--compromised" if is_comp else ""}">
+            <div class="insight-icon">{icon}</div>
             <div class="insight-content">
-                <strong>Possível ataque de força bruta detectado</strong>
-                <p>IP: {escape(top_critical["ip"])} | MITRE: {escape(mitre)}</p>
+                <strong>{title}</strong>
+                <p>IP: {escape(target_insight["ip"])} | MITRE: {escape(mitre)}</p>
             </div>
         </div>
         """
+
+    # Resumo Global Detalhado
+    summary_list = []
+    if compromised_count: summary_list.append(f"<li>{compromised_count} possível(is) comprometimento(s)</li>")
+    if critical_count: summary_list.append(f"<li>{critical_count} ataque(s) de força bruta</li>")
+    if suspicious_count: summary_list.append(f"<li>{suspicious_count} atividade(s) suspeita(s) isolada(s)</li>")
+    
+    summary_html = f"<ul>{''.join(summary_list)}</ul>" if summary_list else "<p>Nenhuma ameaça detectada.</p>"
 
     return f"""<!doctype html>
 <html lang="pt-BR">
@@ -60,7 +81,9 @@ def render_page(log_text: str = DEFAULT_SAMPLE, grouped_findings: list[dict] | N
       --cyan: #4fd7ff;
       --amber: #ffb454;
       --red: #ff5a5f;
+      --purple: #a371f7;
       --red-glow: rgba(255, 90, 95, 0.15);
+      --purple-glow: rgba(163, 113, 247, 0.15);
     }}
     * {{ box-sizing: border-box; }}
     body {{
@@ -95,6 +118,10 @@ def render_page(log_text: str = DEFAULT_SAMPLE, grouped_findings: list[dict] | N
         gap: 16px;
         animation: pulse 2s infinite;
     }}
+    .banner--compromised {{
+        background: var(--purple-glow);
+        border-color: rgba(163, 113, 247, 0.4);
+    }}
     @keyframes pulse {{
         0% {{ box-shadow: 0 0 0 0 rgba(255, 90, 95, 0.4); }}
         70% {{ box-shadow: 0 0 0 10px rgba(255, 90, 95, 0); }}
@@ -102,6 +129,7 @@ def render_page(log_text: str = DEFAULT_SAMPLE, grouped_findings: list[dict] | N
     }}
     .insight-icon {{ font-size: 1.5rem; }}
     .insight-content strong {{ color: var(--red); display: block; font-size: 1.1rem; }}
+    .banner--compromised .insight-content strong {{ color: var(--purple); }}
     .insight-content p {{ color: var(--muted); font-size: 0.9rem; }}
 
     .shell {{ display: grid; grid-template-columns: minmax(0, 1.05fr) minmax(320px, 0.95fr); gap: 18px; align-items: start; }}
@@ -139,16 +167,18 @@ def render_page(log_text: str = DEFAULT_SAMPLE, grouped_findings: list[dict] | N
     button:hover {{ background: rgba(79, 215, 255, 0.2); border-color: var(--cyan); }}
     
     .results {{ display: grid; gap: 14px; }}
-    .metrics {{ display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; padding: 14px; }}
-    .metric {{ border: 1px solid var(--line); border-radius: 12px; padding: 12px; background: var(--panel-soft); text-align: center; }}
-    .metric strong {{ display: block; font-size: 1.6rem; }}
-    .metric span {{ color: var(--muted); font-size: 0.68rem; }}
-    
+    .global-summary {{ padding: 20px; }}
+    .global-summary h3 {{ font-size: 0.8rem; color: var(--muted); text-transform: uppercase; margin-bottom: 12px; border-bottom: 1px solid var(--line); padding-bottom: 8px; }}
+    .global-summary ul {{ padding-left: 18px; margin: 0; font-size: 0.9rem; color: var(--text); }}
+    .global-summary li {{ margin-bottom: 4px; }}
+
     .finding {{ padding: 20px; display: grid; gap: 12px; position: relative; overflow: hidden; }}
+    .finding.compromised {{ border-left: 4px solid var(--purple); background: linear-gradient(90deg, var(--purple-glow), transparent); }}
     .finding.critical {{ border-left: 4px solid var(--red); background: linear-gradient(90deg, var(--red-glow), transparent); }}
     
     .finding h2 {{ display: flex; justify-content: space-between; gap: 12px; align-items: center; }}
     .badge {{ border-radius: 4px; padding: 0.2rem 0.5rem; font-size: 0.65rem; font-weight: bold; }}
+    .badge--comprometido {{ color: #fff; background: var(--purple); }}
     .badge--crítico {{ color: #fff; background: var(--red); }}
     .badge--suspeito {{ color: #000; background: var(--amber); }}
     
@@ -157,12 +187,11 @@ def render_page(log_text: str = DEFAULT_SAMPLE, grouped_findings: list[dict] | N
     .event-count {{ color: var(--cyan); font-weight: bold; }}
     
     .explanation {{ color: var(--text); font-weight: 500; }}
-    .reasoning {{ color: var(--muted); font-size: 0.9rem; border-top: 1px solid var(--line); pt: 10px; }}
+    .reasoning {{ color: var(--muted); font-size: 0.9rem; border-top: 1px solid var(--line); padding-top: 10px; }}
     .empty {{ padding: 24px; color: var(--muted); text-align: center; font-style: italic; }}
     
     @media (max-width: 860px) {{
       header, .shell {{ grid-template-columns: 1fr; display: grid; }}
-      .metrics {{ grid-template-columns: 1fr; }}
     }}
   </style>
 </head>
@@ -172,7 +201,7 @@ def render_page(log_text: str = DEFAULT_SAMPLE, grouped_findings: list[dict] | N
       <div>
         <p class="eyebrow">Heimdall Gatekeeper</p>
         <h1>Security Analyzer</h1>
-        <p class="subtitle">Análise inteligente de logs SSH com agrupamento por IP e detecção de padrões MITRE ATT&CK.</p>
+        <p class="subtitle">Análise comportamental de logs SSH com detecção de comprometimento e padrões MITRE ATT&CK.</p>
       </div>
     </header>
 
@@ -185,10 +214,9 @@ def render_page(log_text: str = DEFAULT_SAMPLE, grouped_findings: list[dict] | N
         <div class="actions"><button type="submit">Executar Análise</button></div>
       </form>
       <aside class="results">
-        <div class="panel metrics">
-          <div class="metric"><strong>{len(grouped_findings)}</strong><span>IPs Únicos</span></div>
-          <div class="metric"><strong>{suspicious_count}</strong><span>Suspeitos</span></div>
-          <div class="metric"><strong>{critical_count}</strong><span>Críticos</span></div>
+        <div class="panel global-summary">
+          <h3>Resumo da Atividade</h3>
+          {summary_html}
         </div>
         {empty_state}
         {cards}
@@ -202,9 +230,12 @@ def render_page(log_text: str = DEFAULT_SAMPLE, grouped_findings: list[dict] | N
 def render_finding_card(item: dict) -> str:
     mitre = ", ".join(item["mitre_techniques"]) if item["mitre_techniques"] else "N/A"
     classification = item["classification"]
-    critical_class = "critical" if classification == "crítico" else ""
     
-    return f"""<article class="panel finding {critical_class}">
+    status_class = ""
+    if classification == "comprometido": status_class = "compromised"
+    elif classification == "crítico": status_class = "critical"
+    
+    return f"""<article class="panel finding {status_class}">
   <h2>{escape(item["ip"] or "IP desconhecido")} <span class="badge badge--{escape(classification)}">{escape(classification)}</span></h2>
   <div class="meta">
     <span class="event-count">Eventos: {item["count"]}</span>
@@ -229,7 +260,6 @@ class HeimdallWebHandler(BaseHTTPRequestHandler):
         raw_body = self.rfile.read(content_length).decode("utf-8", errors="replace")
         log_text = parse_qs(raw_body).get("logs", [""])[0]
         
-        # Realiza a análise e agrupa os resultados
         findings = analyze_text(log_text)
         grouped_findings = get_grouped_findings(findings)
         
