@@ -1,9 +1,15 @@
 import argparse
-from parsers.ssh_parser import parse_ssh_log
-from detectors.failed_login_detector import FailedLoginDetector
+import sys
+from pathlib import Path
+
+sys.dont_write_bytecode = True
+
+from core.analyzer import analyze_lines
+from core.cache import cleanup_runtime_cache
 from formatters.result_formatter import format_analysis
 
 def main():
+    cleanup_runtime_cache(Path(__file__).resolve().parents[1])
     parser = argparse.ArgumentParser(
         description="Analyze SSH/auth logs and explain suspicious security events."
     )
@@ -21,22 +27,15 @@ def main():
     )
     args = parser.parse_args()
 
-    detector = FailedLoginDetector()
     emitted_results = 0
 
     try:
         with open(args.log_file, "r") as f:
-            for line in f:
-                event = parse_ssh_log(line)
-                if not event:
-                    continue
-
-                result = detector.analyze(event)
-                if result:
-                    if args.format == "text" and emitted_results:
-                        print()
-                    print(format_analysis(event, result, args.format, args.pretty))
-                    emitted_results += 1
+            for event, result in analyze_lines(f.readlines()):
+                if args.format == "text" and emitted_results:
+                    print()
+                print(format_analysis(event, result, args.format, args.pretty))
+                emitted_results += 1
     except FileNotFoundError:
         print(f"Erro: Arquivo '{args.log_file}' não encontrado.")
     except Exception as e:
