@@ -38,6 +38,7 @@ heimdall-ai/
 ├── core/                  # Modelos e contratos centrais
 ├── parsers/               # Responsável por interpretar logs
 ├── detectors/             # Lógica de detecção de eventos
+├── formatters/            # Camada de saída e serialização
 ├── cli/                   # Interface de linha de comando
 ├── docs/                  # Documentação do projeto
 ├── Dockerfile
@@ -53,12 +54,13 @@ heimdall-ai/
 O fluxo é simples por enquanto:
 
 ```text
-log → parser → evento → detector → resultado
+log → parser → evento → detector → resultado → formatter → saída
 ```
 
 * O parser extrai informações do log
 * O detector analisa o comportamento
 * O resultado traz classificação + explicação
+* O formatter transforma a análise em JSON estruturado ou texto legível
 
 ---
 
@@ -69,6 +71,18 @@ log → parser → evento → detector → resultado
 ```bash
 pip install -r requirements.txt
 python -m cli.main sample.log
+```
+
+Saída em texto para leitura humana:
+
+```bash
+python -m cli.main sample.log --format text
+```
+
+JSON indentado:
+
+```bash
+python -m cli.main sample.log --pretty
 ```
 
 ---

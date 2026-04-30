@@ -1,18 +1,31 @@
-import sys
-import json
+import argparse
 from parsers.ssh_parser import parse_ssh_log
 from detectors.failed_login_detector import FailedLoginDetector
+from formatters.result_formatter import format_analysis
 
 def main():
-    if len(sys.argv) < 2:
-        print("Uso: python -m cli.main <arquivo_log>")
-        return
+    parser = argparse.ArgumentParser(
+        description="Analyze SSH/auth logs and explain suspicious security events."
+    )
+    parser.add_argument("log_file", help="Path to the log file to analyze.")
+    parser.add_argument(
+        "--format",
+        choices=["json", "text"],
+        default="json",
+        help="Output format. Defaults to json.",
+    )
+    parser.add_argument(
+        "--pretty",
+        action="store_true",
+        help="Pretty-print JSON output.",
+    )
+    args = parser.parse_args()
 
-    log_file = sys.argv[1]
     detector = FailedLoginDetector()
+    emitted_results = 0
 
     try:
-        with open(log_file, "r") as f:
+        with open(args.log_file, "r") as f:
             for line in f:
                 event = parse_ssh_log(line)
                 if not event:
@@ -20,16 +33,12 @@ def main():
 
                 result = detector.analyze(event)
                 if result:
-                    print(json.dumps({
-                        "ip": event.ip,
-                        "user": event.user,
-                        "classification": result.classification,
-                        "confidence": result.confidence,
-                        "explanation": result.explanation,
-                        "reasoning": result.reasoning
-                    }, ensure_ascii=False))
+                    if args.format == "text" and emitted_results:
+                        print()
+                    print(format_analysis(event, result, args.format, args.pretty))
+                    emitted_results += 1
     except FileNotFoundError:
-        print(f"Erro: Arquivo '{log_file}' não encontrado.")
+        print(f"Erro: Arquivo '{args.log_file}' não encontrado.")
     except Exception as e:
         print(f"Ocorreu um erro: {e}")
 
